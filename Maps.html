@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Jacks Walking Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { 
+            --neon: #00ff88; 
+            --bg: #0a0a0a; 
+            --card: #151515; 
+            --border: #222; 
+            --gradient: linear-gradient(-45deg, #004d2c, #000000, #00ff88, #0a0a0a);
+            --btn-gradient: linear-gradient(135deg, #111 0%, #051a11 100%);
+        }
+        
+        body { margin: 0; font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: white; display: flex; height: 100vh; overflow: hidden; }
+        
+        /* Admin Security - Hide by default */
+        .admin-ui { display: none !important; }
+        .is-admin .admin-ui { display: block !important; }
+        .is-admin .admin-flex { display: flex !important; }
+
+        #sidebar { width: 360px; min-width: 360px; background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; box-shadow: 10px 0 40px rgba(0,0,0,0.8); z-index: 10; }
+        
+        /* Header */
+        .header { padding: 40px 25px 30px 25px; background: var(--gradient); background-size: 400% 400%; animation: gradientBG 15s ease infinite; border-bottom: 2px solid #000; display: flex; flex-direction: column; gap: 20px; }
+        @keyframes gradientBG { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+        @keyframes titlePulse { 0%, 100% { color: #051a11; text-shadow: none; } 50% { color: var(--neon); text-shadow: 0 0 15px rgba(0, 255, 136, 1); } }
+        
+        .title-row { display: flex; justify-content: space-between; align-items: center; }
+        .title-row h1 { margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -1.5px; text-transform: uppercase; line-height: 0.85; animation: titlePulse 15s ease-in-out infinite; cursor: pointer; }
+        .count-badge { background: var(--btn-gradient); padding: 10px 16px; border-radius: 10px; font-size: 11px; font-weight: 900; color: var(--neon); text-transform: uppercase; letter-spacing: 1.5px; border: 1px solid #00ff8833; }
+        
+        .folder-btn { display: block; width: 100%; padding: 18px 0; background: var(--btn-gradient) !important; color: var(--neon) !important; border: 1px solid #00ff8833 !important; border-radius: 12px; font-weight: 900; font-size: 12px; text-transform: uppercase; letter-spacing: 2px; cursor: pointer; text-align: center; transition: 0.4s; position: relative; overflow: hidden; }
+        .folder-btn input { position: absolute; top: 0; left: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; font-size: 100px; }
+
+        /* Stats & Filter Bar */
+        .stats-container { padding: 30px 25px 15px 25px; background: #0c0c0c; border-bottom: 1px solid #111; }
+        .total-km { font-size: 48px; font-weight: 900; color: var(--neon); letter-spacing: -2px; line-height: 1; transition: 0.3s; }
+        .stat-label { font-size: 10px; text-transform: uppercase; color: #555; letter-spacing: 2px; margin-bottom: 8px; display: block; }
+
+        .sort-controls { padding: 15px 25px; background: #0c0c0c; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; }
+        .sort-btn { background: #1a1a1a; border: 1px solid #333; color: #666; padding: 6px 10px; border-radius: 6px; font-size: 9px; font-weight: 900; text-transform: uppercase; cursor: pointer; transition: 0.2s; flex: 1; text-align: center; }
+        .sort-btn.active { border-color: var(--neon); color: var(--neon); background: #051a11; }
+        #dir-btn { width: 35px; flex: none; font-size: 12px; }
+
+        #activity-list { flex-grow: 1; overflow-y: auto; padding: 20px; }
+        .activity-card { background: #111; padding: 18px; border-radius: 14px; margin-bottom: 15px; border: 1px solid #222; cursor: pointer; transition: 0.3s; }
+        .activity-card:hover, .activity-card.active { border-color: var(--neon); background: #1a1a1a; transform: translateY(-2px); }
+        .activity-name { font-size: 14px; font-weight: 700; display: block; margin-bottom: 4px; color: #fff; text-transform: capitalize; }
+        .activity-date { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; display: block; }
+        .activity-details { font-size: 11px; color: var(--neon); font-family: monospace; }
+
+        /* Map & Tracker */
+        #map-container { flex-grow: 1; position: relative; }
+        #map { width: 100%; height: 100%; }
+        #suburb-tracker {
+            position: absolute; bottom: 30px; right: 30px; width: 300px; 
+            background: rgba(21, 21, 21, 0.85); backdrop-filter: blur(15px);
+            border: 1px solid var(--border); border-radius: 20px; padding: 25px;
+            z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .tracker-title { color: #555; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 20px; display: block; }
+        .suburb-item { margin-bottom: 18px; cursor: pointer; transition: 0.2s; }
+        .suburb-item.active-suburb { transform: scale(1.05); }
+        .suburb-item.active-suburb .suburb-header { color: var(--neon); }
+        
+        .suburb-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 14px; font-weight: 700; }
+        .progress-rail { background: #222; height: 6px; border-radius: 3px; overflow: hidden; width: 100%; }
+        .progress-fill { height: 100%; border-radius: 3px; }
+        .fill-complete { background: var(--neon); width: 100%; box-shadow: 0 0 10px var(--neon); }
+        .fill-parkdale { background: #ffcc00; width: 33.3%; box-shadow: 0 0 10px #ffcc00; }
+        .fill-next { background: #444; width: 0%; }
+
+        .status-tag { font-size: 9px; text-transform: uppercase; font-weight: 900; }
+        .tag-complete { color: var(--neon); } .tag-parkdale { color: #ffcc00; } .tag-next { color: #ff4444; }
+
+        .clear-db { padding: 15px; font-size: 9px; color: #444; text-align: center; cursor: pointer; letter-spacing: 2px; text-transform: uppercase; border-top: 1px solid #111; }
+
+        /* Login Overlay Styling */
+        #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 9999; display: none; justify-content: center; align-items: center; backdrop-filter: blur(10px); }
+        .login-box { background: #151515; padding: 40px; border-radius: 24px; border: 1px solid var(--neon); text-align: center; box-shadow: 0 0 50px rgba(0, 255, 136, 0.2); }
+        .login-box h2 { color: var(--neon); text-transform: uppercase; letter-spacing: 2px; margin-top: 0; }
+        .login-box input { background: #000; border: 1px solid #333; color: white; padding: 12px; border-radius: 8px; margin-bottom: 20px; width: 220px; outline: none; text-align: center; font-size: 16px; }
+        .login-box input:focus { border-color: var(--neon); }
+    </style>
+</head>
+<body id="main-body">
+
+    <div id="sidebar">
+        <div class="header">
+            <div class="title-row">
+                <h1 onclick="showLogin()">Jacks<br>Walking Map</h1>
+                <div id="hike-count" class="count-badge">0 Hikes</div>
+            </div>
+            <label class="folder-btn admin-ui">Sync Vault<input type="file" id="folder-input" webkitdirectory directory multiple></label>
+            <div class="admin-ui" onclick="logout()" style="color:#ff4444; font-size:10px; text-align:center; cursor:pointer; font-weight:900; letter-spacing:1px;">LOGOUT ADMIN</div>
+        </div>
+
+        <div class="stats-container">
+            <span id="stat-label-text" class="stat-label">Total Distance Walked</span>
+            <div id="total-display" class="total-km">0.00 <span style="font-size: 18px; font-weight: 400;">km</span></div>
+        </div>
+
+        <div class="sort-controls">
+            <button class="sort-btn active" onclick="setSort('timestamp', this)">Date</button>
+            <button class="sort-btn" onclick="setSort('km', this)">KM</button>
+            <button class="sort-btn" onclick="setSort('elev', this)">ELV</button>
+            <button class="sort-btn" id="dir-btn" onclick="toggleDir()">↓</button>
+        </div>
+
+        <div id="activity-list"></div>
+        <div class="clear-db admin-ui" onclick="deleteEverything()">Wipe Saved Data</div>
+    </div>
+
+    <div id="map-container">
+        <div id="map"></div>
+        <div id="suburb-tracker">
+            <span class="tracker-title">Objective Tracker</span>
+            <div id="sub-Mentone" class="suburb-item" onclick="filterBySuburb('Mentone')">
+                <div class="suburb-header">Mentone <span class="status-tag tag-complete">100%</span></div>
+                <div class="progress-rail"><div class="progress-fill fill-complete"></div></div>
+            </div>
+            <div id="sub-Parkdale" class="suburb-item" onclick="filterBySuburb('Parkdale')">
+                <div class="suburb-header">Parkdale <span class="status-tag tag-parkdale">33% Done</span></div>
+                <div class="progress-rail"><div class="progress-fill fill-parkdale"></div></div>
+            </div>
+            <div id="sub-Mordialloc" class="suburb-item" onclick="filterBySuburb('Mordialloc')">
+                <div class="suburb-header">Mordialloc <span class="status-tag tag-next">Next Up</span></div>
+                <div class="progress-rail"><div class="progress-fill fill-next"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="login-overlay">
+        <div class="login-box">
+            <h2>Admin Access</h2>
+            <input type="password" id="pass-input" placeholder="Password">
+            <button class="folder-btn" onclick="checkPass()">Login</button>
+            <p onclick="document.getElementById('login-overlay').style.display='none'" style="color:#555; font-size:10px; cursor:pointer; margin-top:15px; text-transform:uppercase;">Cancel</p>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-gpx/1.7.0/gpx.min.js"></script>
+
+    <script>
+        const map = L.map('map', { zoomControl: false }).setView([-37.8136, 144.9631], 12);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+        let hikeCounter = 0, trackRegistry = {}, activeId = null, activeSuburb = null, db;
+        let sortKey = 'timestamp', sortDir = -1;
+        let allLayersGroup = L.featureGroup().addTo(map);
+
+        // --- AUTH LOGIC ---
+        function showLogin() { document.getElementById('login-overlay').style.display = 'flex'; }
+        
+        function logout() { 
+            document.getElementById('main-body').classList.remove('is-admin'); 
+            localStorage.removeItem('jackAdmin'); 
+            location.reload(); 
+        }
+
+        function checkPass() {
+            const pass = document.getElementById('pass-input').value;
+            if(pass === "jackswalks") { // SET YOUR PASSWORD HERE
+                document.getElementById('main-body').classList.add('is-admin');
+                localStorage.setItem('jackAdmin', 'true');
+                document.getElementById('login-overlay').style.display = 'none';
+                document.getElementById('pass-input').value = "";
+            } else {
+                alert("Incorrect Password");
+            }
+        }
+
+        // Check if previously logged in
+        if(localStorage.getItem('jackAdmin') === 'true') {
+            document.getElementById('main-body').classList.add('is-admin');
+        }
+
+        // --- MAP & DATA LOGIC ---
+        const request = indexedDB.open("JacksWalkingMap_Final_V18", 1);
+        request.onupgradeneeded = (e) => { e.target.result.createObjectStore("hikes", { keyPath: "id" }); };
+        request.onsuccess = (e) => { db = e.target.result; loadFromDatabase(); };
+
+        document.getElementById('folder-input').addEventListener('change', async function(e) {
+            const files = Array.from(e.target.files).filter(f => f.name.endsWith('.gpx'));
+            for (const file of files) {
+                const content = await file.text();
+                await saveFile(file.name, content);
+            }
+            location.reload(); 
+        });
+
+        async function saveFile(name, content) {
+            return new Promise((resolve) => {
+                new L.GPX(content, { async: true }).on('loaded', function(e) {
+                    const gpx = e.target;
+                    const dateObj = gpx.get_start_time();
+                    const hike = { 
+                        id: name + Date.now(),
+                        name: name.replace(/\.gpx$/i, '').replace(/[-_]/g, ' ').replace(/\d{4}.*/, '').trim(),
+                        date: dateObj ? dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "Unknown",
+                        km: gpx.get_distance() / 1000, 
+                        elev: Math.round(gpx.get_elevation_gain()), 
+                        gpxData: content, 
+                        timestamp: dateObj ? dateObj.getTime() : 0 
+                    };
+                    db.transaction("hikes", "readwrite").objectStore("hikes").put(hike).onsuccess = () => resolve();
+                });
+            });
+        }
+
+        function filterBySuburb(suburb) {
+            document.querySelectorAll('.suburb-item').forEach(el => el.classList.remove('active-suburb'));
+            if (activeSuburb === suburb) {
+                activeSuburb = null;
+                document.getElementById('stat-label-text').innerText = "Total Distance Walked";
+                resetView();
+                return;
+            }
+            activeSuburb = suburb;
+            document.getElementById('sub-' + suburb).classList.add('active-suburb');
+            document.getElementById('stat-label-text').innerText = suburb + " Total Distance";
+            const filterText = suburb.toLowerCase();
+            const visibleLayers = [];
+            Object.keys(trackRegistry).forEach(id => {
+                const item = trackRegistry[id];
+                const matches = item.data.name.toLowerCase().includes(filterText);
+                item.layer.setStyle({ opacity: matches ? 1 : 0.05, weight: matches ? 5 : 3 });
+                if (matches) visibleLayers.push(item.layer);
+            });
+            refreshList();
+            if (visibleLayers.length > 0) {
+                const group = L.featureGroup(visibleLayers);
+                map.flyToBounds(group.getBounds(), { padding: [100, 100], duration: 1.5 });
+            }
+        }
+
+        function highlightTrack(id) {
+            if (activeId === id) { resetView(); return; }
+            activeId = id; const entry = trackRegistry[id];
+            Object.keys(trackRegistry).forEach(key => {
+                const item = trackRegistry[key];
+                const isFiltered = activeSuburb ? item.data.name.toLowerCase().includes(activeSuburb.toLowerCase()) : true;
+                if (key === id) item.layer.setStyle({ opacity: 1, weight: 6 }).bringToFront();
+                else if (isFiltered) item.layer.setStyle({ opacity: 0.15, weight: 3 });
+                else item.layer.setStyle({ opacity: 0.05, weight: 3 });
+            });
+            refreshList();
+            map.flyToBounds(entry.layer.getBounds(), { padding: [100, 100], duration: 1.2 });
+        }
+
+        function resetView() {
+            activeId = null; 
+            if (activeSuburb) {
+                const tempSub = activeSuburb;
+                activeSuburb = null;
+                filterBySuburb(tempSub);
+            } else {
+                Object.values(trackRegistry).forEach(obj => obj.layer.setStyle({ opacity: 0.5, weight: 3 }));
+                refreshList();
+                map.fitBounds(allLayersGroup.getBounds(), { padding: [50, 50], duration: 1.5 });
+            }
+        }
+
+        function renderHike(hike) {
+            new L.GPX(hike.gpxData, { 
+                async: true, 
+                marker_options: { startIconUrl: '', endIconUrl: '', shadowUrl: '' },
+                polyline_options: { color: '#00ff88', weight: 3, opacity: 0.5 } 
+            }).on('loaded', function(e) {
+                trackRegistry[hike.id] = { layer: e.target, data: hike };
+                hikeCounter++;
+                allLayersGroup.addLayer(e.target);
+                if (hikeCounter === Object.keys(trackRegistry).length) {
+                    refreshList();
+                    map.fitBounds(allLayersGroup.getBounds(), { padding: [40, 40] });
+                }
+            }).addTo(map);
+        }
+
+        function refreshList() {
+            const list = document.getElementById('activity-list');
+            list.innerHTML = '';
+            let hikes = Object.values(trackRegistry).map(obj => obj.data);
+            if (activeSuburb) {
+                const filterText = activeSuburb.toLowerCase();
+                hikes = hikes.filter(h => h.name.toLowerCase().includes(filterText));
+            }
+            let currentTotal = hikes.reduce((acc, h) => acc + h.km, 0);
+            document.getElementById('total-display').innerHTML = `${currentTotal.toFixed(2)} <span style="font-size: 18px; font-weight: 400;">km</span>`;
+            document.getElementById('hike-count').innerText = `${hikes.length} Hikes`;
+            hikes.sort((a,b) => (a[sortKey] - b[sortKey]) * sortDir);
+            hikes.forEach(h => {
+                const card = document.createElement('div');
+                card.className = 'activity-card' + (activeId === h.id ? ' active' : '');
+                card.innerHTML = `<span class="activity-date">${h.date}</span><span class="activity-name">${h.name}</span>
+                                  <div class="activity-details">${h.km.toFixed(2)} KM | ▲ ${h.elev}M</div>`;
+                card.onclick = () => highlightTrack(h.id);
+                list.appendChild(card);
+            });
+        }
+
+        function setSort(key, btn) {
+            sortKey = key;
+            document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            refreshList();
+        }
+
+        function toggleDir() {
+            sortDir *= -1;
+            document.getElementById('dir-btn').innerText = sortDir === 1 ? '↑' : '↓';
+            refreshList();
+        }
+
+        function loadFromDatabase() {
+            db.transaction("hikes", "readonly").objectStore("hikes").openCursor().onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor) { renderHike(cursor.value); cursor.continue(); }
+            };
+        }
+
+        function deleteEverything() {
+            if(confirm("WIPE ALL DATA? This cannot be undone.")) {
+                db.transaction("hikes", "readwrite").objectStore("hikes").clear();
+                location.reload();
+            }
+        }
+    </script>
+</body>
+</html>
